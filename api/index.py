@@ -107,7 +107,6 @@ async def ocr_endpoint(
 
     return {'code': -200, 'msg': '图片处理失败'}
 
-# 启动 FastAPI 应用
-if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=9000)
+@app.route('/', methods=["GET"])
+def return_OneText():
+    return "<h1>欢迎使用本接口</h1>"
