@@ -1,17 +1,8 @@
-#  请求示例：
-#  POST 请求数据格式：
-#  data：base64 编码图像数据（可选）
-#  file：上传的图像文件（可选）
-#  url：图像 URL（可选）
-#  headers：自定义请求头（可选），格式为 "Key1:Value1;Key2:Value2"
-#  params：自定义表单参数（可选），格式为 "param1=value1&param2=value2"
-
 import base64
 import binascii
-import aiohttp
-import ddddocr
 from fastapi import FastAPI, UploadFile, Form, File, HTTPException
 from typing import Union, Dict, Optional
+import requests
 
 # 初始化 FastAPI 应用
 app = FastAPI()
@@ -39,19 +30,24 @@ def decode_image(image: Union[UploadFile, str, None]) -> bytes:
                 return base64.b64decode(image.split(',')[1])
             except (binascii.Error, ValueError):
                 raise HTTPException(status_code=400, detail="无效的 base64 字符串")
-        raise HTTPException(status_code=400, detail="无效的 base64 数据")
+        else:
+            try:
+                return base64.b64decode(image)
+            except (binascii.Error, ValueError):
+                raise HTTPException(status_code=400, detail="无效的 base64 字符串")
     else:
         raise HTTPException(status_code=400, detail="无效的图像输入")
 
-# 从 URL 获取图像数据及 Cookie（异步）
+# 从 URL 获取图像数据及 Cookie
 async def fetch_image_from_url(url: str, headers: Optional[Dict[str, str]] = None, params: Optional[Dict[str, str]] = None) -> Dict[str, Union[bytes, str]]:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, params=params, timeout=10) as response:
                 response.raise_for_status()
-                cookies = '; '.join(f'{key}={value}' for key, value in response.cookies.items())
-                return {'image': await response.read(), 'cookies': cookies}
-    except aiohttp.ClientError as e:
+                cookies = {key: value.value for key, value in response.cookies.items()}
+                cookies_str = '; '.join(f'{key}={value}' for key, value in cookies.items())
+                return {'image': await response.read(), 'cookies': cookies_str}
+    except requests.RequestException as e:
         raise HTTPException(status_code=400, detail=f"从 URL 获取图像时出错: {str(e)}")
 
 @app.post('/ocr')
@@ -63,7 +59,7 @@ async def ocr_endpoint(
     params: Optional[str] = Form(None)       # 图像请求的自定义参数
 ):
     headers_dict = dict(item.split(':', 1) for item in headers.split(';')) if headers else None
-    params_dict = dict(item.split('=', 1) for item in params.split('&')) if params else None
+    params_dict = dict(item.split('=', 1)) if params else None
 
     if data:
         try:
@@ -93,7 +89,7 @@ async def ocr_endpoint(
 
     if url:
         try:
-            result = await fetch_image_from_url(url, headers=headers_dict, params=params_dict)
+            result = fetch_image_from_url(url, headers=headers_dict, params=params_dict)
             image_data = result['image']
             cookies = result['cookies']
             res = ocr.classification(image_data)
